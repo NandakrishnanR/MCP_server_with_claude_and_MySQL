@@ -1,5 +1,3 @@
-# Inventory Management MCP Server
-
 ## What This Project Does
 
 This is a **Model Context Protocol (MCP) server** that connects **Claude Desktop** to your **MySQL database**. It allows you to manage inventory through natural language conversations with Claude.
@@ -9,6 +7,8 @@ This is a **Model Context Protocol (MCP) server** that connects **Claude Desktop
 1. **MCP Server** (`main.py`): Python server that exposes database operations as tools
 2. **MySQL Database** (`database.sql`): Stores inventory data with products, locations, and quantities
 3. **Claude Desktop Integration**: Tools appear in Claude's interface for natural language queries
+
+<img width="2940" height="1912" alt="7885" src="https://github.com/user-attachments/assets/2c2174b6-c8e7-424a-95ce-787df3e4a155" />
 
 ## Architecture Deep Dive
 
