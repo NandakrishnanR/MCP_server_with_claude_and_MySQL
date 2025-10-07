@@ -1,16 +1,18 @@
 from mcp.server.fastmcp import FastMCP
 import mysql.connector
 from typing import List, Dict
+from dotenv import load_dotenv
+from config import get_db_config_dict
+from slack_service import SlackService
+
+# Load environment variables
+load_dotenv()
 
 mcp = FastMCP(name="inventory_mcp")
 
-# MySQL config
-db_config = {
-    "host": "localhost",
-    "user": "root",
-    "password": "9446122497",
-    "database": "aaitech_inventory"
-}
+# Use centralized config
+db_config = get_db_config_dict()
+slack_service = SlackService()
 
 
 @mcp.tool()
@@ -136,6 +138,58 @@ def inventory_summary() -> Dict:
         "low_stock_count": low_stock_count,
         "top_locations": top_locations,
         "summary": f"Total: {total_items} items, {low_stock_count} low stock, top location: {top_locations[0]['location'] if top_locations else 'N/A'}"
+    }
+
+
+@mcp.tool()
+def send_slack_alert(threshold: int = 5) -> Dict:
+    """
+    Send low stock alert to Slack - automation foundation
+    """
+    # Get low stock items
+    low_stock_items = low_stock(threshold)
+    
+    if isinstance(low_stock_items, dict) and "error" in low_stock_items:
+        return low_stock_items
+    
+    # Send to Slack
+    result = slack_service.send_low_stock_alert(low_stock_items)
+    
+    return {
+        "slack_result": result,
+        "items_checked": len(low_stock_items),
+        "threshold": threshold
+    }
+
+
+@mcp.tool()
+def send_daily_summary_to_slack() -> Dict:
+    """
+    Send daily inventory summary to Slack - automation foundation
+    """
+    # Get summary data
+    summary_data = inventory_summary()
+    
+    # Send to Slack
+    result = slack_service.send_daily_summary(summary_data)
+    
+    return {
+        "slack_result": result,
+        "summary_data": summary_data
+    }
+
+
+@mcp.tool()
+def test_slack_connection() -> Dict:
+    """
+    Test Slack webhook connection - verify integration works
+    """
+    test_message = "🧪 Test message from Inventory MCP Server"
+    result = slack_service.send_message(test_message)
+    
+    return {
+        "test_result": result,
+        "message": "Test message sent to Slack"
     }
 
 

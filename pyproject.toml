@@ -8,4 +8,6 @@ dependencies = [
     "httpx",
     "mcp[cli]",
     "mysql-connector-python",
+    "requests",
+    "python-dotenv",
 ]
