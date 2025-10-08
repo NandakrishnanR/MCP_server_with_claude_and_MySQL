@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from config import get_db_config_dict
 from slack_service import SlackService
 from email_service import EmailService
+from order_service import OrderService
 
 # Load environment variables
 load_dotenv()
@@ -15,6 +16,7 @@ mcp = FastMCP(name="inventory_mcp")
 db_config = get_db_config_dict()
 slack_service = SlackService()
 email_service = EmailService()
+order_service = OrderService()
 
 
 @mcp.tool()
@@ -286,4 +288,106 @@ def send_combined_alert(threshold: int = 5) -> Dict:
     }
 
 
+@mcp.tool()
+def auto_reorder_low_stock(threshold: int = 5) -> Dict:
+    """
+    Automatically create purchase orders for low stock items - REAL BUSINESS VALUE
+    """
+    # Get low stock items
+    low_stock_items = low_stock(threshold)
+    
+    if isinstance(low_stock_items, dict) and "error" in low_stock_items:
+        return low_stock_items
+    
+    if not low_stock_items:
+        return {"status": "no_action", "message": "No low stock items found"}
+    
+    # Create purchase order
+    order = order_service.create_purchase_order(low_stock_items)
+    
+    # Send order to supplier
+    email_result = order_service.send_order_to_supplier(order)
+    
+    # Send notification to manager
+    notification_result = send_combined_alert(threshold)
+    
+    return {
+        "order_created": order,
+        "email_sent": email_result,
+        "notifications_sent": notification_result,
+        "items_ordered": len(order['items']),
+        "total_amount": order['total_amount'],
+        "delivery_date": order['delivery_date'][:10]
+    }
+
+
+@mcp.tool()
+def list_purchase_orders(status: str = None) -> List[Dict]:
+    """
+    List all purchase orders, optionally filtered by status
+    """
+    orders = order_service.list_orders(status)
+    return orders
+
+
+@mcp.tool()
+def get_order_status(order_id: str) -> Dict:
+    """
+    Get status of a specific purchase order
+    """
+    return order_service.get_order_status(order_id)
+
+
+@mcp.tool()
+def update_order_status(order_id: str, new_status: str) -> Dict:
+    """
+    Update order status (pending, confirmed, shipped, delivered)
+    """
+    return order_service.update_order_status(order_id, new_status)
+
+
+@mcp.tool()
+def full_automation_workflow(threshold: int = 5) -> Dict:
+    """
+    Complete automation: Check stock → Alert → Auto-order → Notify
+    This is the MAIN FEATURE that provides real business value
+    """
+    # Step 1: Check stock levels
+    low_stock_items = low_stock(threshold)
+    
+    if isinstance(low_stock_items, dict) and "error" in low_stock_items:
+        return low_stock_items
+    
+    if not low_stock_items:
+        return {
+            "status": "all_good",
+            "message": "All items are above threshold",
+            "items_checked": 0
+        }
+    
+    # Step 2: Send alerts (Slack + Email)
+    alert_result = send_combined_alert(threshold)
+    
+    # Step 3: Auto-create purchase order
+    order = order_service.create_purchase_order(low_stock_items)
+    
+    # Step 4: Send order to supplier
+    email_result = order_service.send_order_to_supplier(order)
+    
+    # Step 5: Return complete workflow result
+    return {
+        "workflow_status": "completed",
+        "alerts_sent": alert_result,
+        "order_created": {
+            "order_id": order['order_id'],
+            "total_amount": order['total_amount'],
+            "delivery_date": order['delivery_date'][:10],
+            "items_count": len(order['items'])
+        },
+        "supplier_notified": email_result,
+        "summary": f"Created order {order['order_id']} for ${order['total_amount']:.2f}, delivery on {order['delivery_date'][:10]}"
+    }
+
+
 if __name__ == "__main__":
+    mcp.run()
