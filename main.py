@@ -1,14 +1,40 @@
 from mcp.server.fastmcp import FastMCP
 import mysql.connector
-from typing import List, Dict
+from typing import List, Dict, Optional
+import re
 from dotenv import load_dotenv
 from config import get_db_config_dict
 from slack_service import SlackService
 from email_service import EmailService
 from order_service import OrderService
+from datetime import datetime, timedelta
+from employee_directory import (
+    load_directory,
+    get_default_supervisor,
+    get_default_handlers,
+    get_email_for_name,
+    get_slack_for_name,
+)
 
 # Load environment variables
 load_dotenv()
+
+# Set default environment variables if not set (for Claude Desktop compatibility)
+import os
+if not os.getenv('EMAIL_USERNAME'):
+    os.environ['EMAIL_USERNAME'] = 'rnandakrishnan2001@gmail.com'
+if not os.getenv('EMAIL_PASSWORD'):
+    os.environ['EMAIL_PASSWORD'] = 'fjcl jkxb uhhn jabj'
+if not os.getenv('FROM_EMAIL'):
+    os.environ['FROM_EMAIL'] = 'rnandakrishnan2001@gmail.com'
+if not os.getenv('TO_EMAIL'):
+    os.environ['TO_EMAIL'] = 'nandakrishnan.rajeev@gmail.com'
+if not os.getenv('SLACK_WEBHOOK_URL'):
+    os.environ['SLACK_WEBHOOK_URL'] = 'YOUR_SLACK_WEBHOOK_URL_HERE'
+if not os.getenv('SLACK_CHANNEL'):
+    os.environ['SLACK_CHANNEL'] = '#all-mcp-server-testing'
+if not os.getenv('SLACK_USERNAME'):
+    os.environ['SLACK_USERNAME'] = 'Inventory Automation Bot'
 
 mcp = FastMCP(name="inventory_mcp")
 
@@ -17,6 +43,7 @@ db_config = get_db_config_dict()
 slack_service = SlackService()
 email_service = EmailService()
 order_service = OrderService()
+employee_dir = load_directory(os.getenv("EMPLOYEE_DIRECTORY_JSON"))
 
 
 @mcp.tool()
@@ -50,8 +77,38 @@ def remove_inventory(item_id: str, location: str, quantity: int) -> dict:
         (quantity, item_id, location, quantity)
     )
     conn.commit()
+    # Fetch current quantity and product name after update
+    cursor.execute(
+        "SELECT product_name, quantity FROM inventory WHERE item_id=%s AND location=%s",
+        (item_id, location)
+    )
+    row = cursor.fetchone()
     conn.close()
-    return {"message": f"Removed {quantity} units of {item_id} from {location}"}
+
+    result = {"message": f"Removed {quantity} units of {item_id} from {location}"}
+
+    # Auto-trigger alerts when threshold is met (<= 3)
+    try:
+        if row and row[1] is not None and int(row[1]) <= 3:
+            item_payload = [{
+                "item_id": item_id,
+                "product_name": row[0],
+                "location": location,
+                "quantity": int(row[1]),
+            }]
+            # Send both Slack and Email alerts without asking
+            slack_service.send_low_stock_alert(item_payload)
+            email_service.send_low_stock_alert(item_payload)
+            result["auto_alert"] = {
+                "status": "sent",
+                "threshold": 3,
+                "current_quantity": int(row[1])
+            }
+    except Exception:
+        # Do not fail the inventory update if alert sending has issues
+        result["auto_alert"] = {"status": "failed"}
+
+    return result
 
 
 @mcp.tool()
@@ -84,14 +141,480 @@ def check_stock(item_id: str, location: str) -> dict:
 def list_inventory() -> list:
     conn = mysql.connector.connect(**db_config)
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT item_id, product_name, location, quantity FROM inventory")
+    # Enforce German-only view if flag is set
+    german_only = os.getenv("GERMAN_ONLY", "1") == "1"
+    if german_only:
+        cursor.execute(
+            """
+            SELECT item_id, product_name, location, quantity FROM inventory
+            WHERE location IN (
+                'Berlin','Munich','Hamburg','Frankfurt','Cologne','Stuttgart','Dusseldorf','Dortmund','Essen','Leipzig','Bremen','Dresden','Hanover','Nuremberg','Duisburg','Bochum','Wuppertal','Bielefeld','Bonn','Munster'
+            )
+            """
+        )
+    else:
+        cursor.execute("SELECT item_id, product_name, location, quantity FROM inventory")
     rows = cursor.fetchall()
     conn.close()
     return rows
 
 
 @mcp.tool()
-def low_stock(threshold: int = 5) -> List[Dict]:
+def onboard_intern(
+    intern_name: str,
+    intern_email: str,
+    city: str,
+    preferred_pickup_date: str | None = None,
+    intern_slack_mention: str | None = None,
+    notify_channel: bool = True,
+    inventory_assignees_csv: str | None = None,
+    role_info: str | None = None,
+    supervisor_name: str | None = None,
+    office_address: str | None = None,
+    map_link: str | None = None,
+) -> Dict:
+    """
+    End-to-end onboarding:
+    - Post a Slack welcome with pickup details
+    - Send a professional HTML welcome email with links and company signature
+    - If inventory shortages exist, include a severity table in the email
+
+    preferred_pickup_date: YYYY-MM-DD (optional). Defaults to the next business day.
+    """
+    # Choose a pickup location among known locations closest to city
+    # For demo, map city keywords to available locations
+    locations = [
+        "Berlin", "Munich", "Hamburg", "Frankfurt", "Cologne",
+        "Stuttgart", "Dusseldorf", "Dortmund", "Essen", "Leipzig",
+        "Bremen", "Dresden", "Hanover", "Nuremberg", "Duisburg",
+        "Bochum", "Wuppertal", "Bielefeld", "Bonn", "Munster"
+    ]
+    city_normalized = city.strip().lower()
+    pickup_location = next((loc for loc in locations if loc.lower() in city_normalized), locations[0])
+
+    # Determine pickup date
+    if preferred_pickup_date:
+        pickup_date = preferred_pickup_date
+    else:
+        d = datetime.now() + timedelta(days=1)
+        pickup_date = d.strftime("%Y-%m-%d")
+
+    # Resolve defaults from employee directory if not provided
+    if not supervisor_name:
+        supervisor_name = get_default_supervisor("ML", employee_dir)
+    # default equipment handlers
+    default_handlers = get_default_handlers("equipment", employee_dir)
+
+    # Slack greeting
+    slack_res = slack_service.send_welcome_message(
+        intern_name=intern_name,
+        city=city,
+        pickup_location=pickup_location,
+        pickup_date=pickup_date,
+        intern_slack_mention=intern_slack_mention,
+        notify_channel=notify_channel,
+        role_info=role_info,
+        supervisor_name=supervisor_name,
+        office_address=office_address,
+        map_link=map_link,
+    )
+
+    # If inventory shortage, fetch low stock items for inclusion
+    shortages = low_stock(3)
+
+    # Welcome email
+    email_res = email_service.send_intern_welcome_email(
+        intern_name=intern_name,
+        to_email=intern_email,
+        city=city,
+        pickup_location=pickup_location,
+        pickup_date=pickup_date,
+        role_info=role_info,
+        supervisor_name=supervisor_name,
+        office_address=office_address,
+        map_link=map_link,
+        low_stock_items=shortages if isinstance(shortages, list) else [],
+    )
+
+    # Optional follow-up inventory update message with assignees
+    inv_msg = None
+    if isinstance(shortages, list) and shortages:
+        assignees = [s.strip() for s in (inventory_assignees_csv or "").split(",") if s.strip()] or default_handlers
+        inv_msg = slack_service.send_inventory_update_message(shortages, assignees=assignees, notify_channel=False)
+
+    return {
+        "slack": slack_res,
+        "intern_email": email_res,
+        "manager_email": manager_email_sent,
+        "pickup_location": pickup_location,
+        "pickup_date": pickup_date,
+        "shortages_found": isinstance(shortages, list) and len(shortages) > 0,
+        "inventory_message": inv_msg,
+    }
+
+
+@mcp.tool()
+def migrate_locations_to_german() -> Dict:
+    """
+    Update existing rows with Indian city names to major German cities.
+    Safe to run multiple times.
+    Mapping:
+      Bengaluru->Berlin, Mumbai->Munich, Delhi->Hamburg, Pune->Frankfurt,
+      Kolkata->Cologne, Chennai->Stuttgart, Hyderabad->Dusseldorf
+    """
+    mapping = {
+        "Bengaluru": "Berlin",
+        "Bangalore": "Berlin",
+        "Mumbai": "Munich",
+        "Bombay": "Munich",
+        "Delhi": "Hamburg",
+        "New Delhi": "Hamburg",
+        "Pune": "Frankfurt",
+        "Kolkata": "Cologne",
+        "Calcutta": "Cologne",
+        "Chennai": "Stuttgart",
+        "Hyderabad": "Dusseldorf",
+    }
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor()
+    total_updated = 0
+    per_city: Dict[str, int] = {}
+    for src, dst in mapping.items():
+        cursor.execute("UPDATE inventory SET location=%s WHERE location=%s", (dst, src))
+        count = cursor.rowcount
+        if count:
+            per_city[f"{src}->" + dst] = int(count)
+            total_updated += int(count)
+    conn.commit()
+    conn.close()
+    return {"updated": total_updated, "details": per_city}
+
+
+@mcp.tool()
+def purge_non_german_locations() -> Dict:
+    """Delete all inventory rows whose location is not a major German city.
+
+    This prevents legacy Indian locations from triggering alerts.
+    """
+    german = {
+        "Berlin", "Munich", "Hamburg", "Frankfurt", "Cologne",
+        "Stuttgart", "Dusseldorf", "Dortmund", "Essen", "Leipzig",
+        "Bremen", "Dresden", "Hanover", "Nuremberg", "Duisburg",
+        "Bochum", "Wuppertal", "Bielefeld", "Bonn", "Munster"
+    }
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor()
+    # Delete anything not in the set
+    format_strings = ",".join(["%s"] * len(german))
+    cursor.execute(f"DELETE FROM inventory WHERE location NOT IN ({format_strings})", tuple(german))
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return {"deleted": int(deleted)}
+
+
+def _parse_onboarding_prompt(prompt: str) -> Dict:
+    """
+    Heuristic parser for natural language onboarding prompts.
+    Extracts: email, name, city, date (YYYY-MM-DD), intern mention, assignees list.
+    """
+    result: Dict[str, Optional[str] | List[str]] = {
+        "email": None,
+        "name": None,
+        "city": None,
+        "date": None,
+        "intern_mention": None,
+        "assignees": [],
+        "role_info": None,
+        "supervisor": None,
+        "office_address": None,
+        "map_link": None,
+    }
+
+    lowered = prompt.lower()
+
+    # Email
+    m = re.search(r"([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})", prompt)
+    if m:
+        result["email"] = m.group(1)
+
+    # Intern mention formats: <@U123ABC> or @username
+    m = re.search(r"(<@[^>]+>)", prompt)
+    if m:
+        result["intern_mention"] = m.group(1)
+    else:
+        m = re.search(r"@([A-Za-z0-9._-]+)", prompt)
+        if m:
+            result["intern_mention"] = "@" + m.group(1)
+
+    # City: pick the first matching known location
+    known_cities = [
+        "Berlin", "Munich", "Hamburg", "Frankfurt", "Cologne",
+        "Stuttgart", "Dusseldorf", "Dortmund", "Essen", "Leipzig",
+        "Bremen", "Dresden", "Hanover", "Nuremberg", "Duisburg",
+        "Bochum", "Wuppertal", "Bielefeld", "Bonn", "Munster"
+    ]
+    for city in known_cities:
+        if city.lower() in lowered:
+            result["city"] = city
+            break
+
+    # Date: support YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, words today/tomorrow
+    date_str = None
+    m = re.search(r"(\d{4}-\d{2}-\d{2})", prompt)
+    if m:
+        date_str = m.group(1)
+    else:
+        m = re.search(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})", prompt)
+        if m:
+            d, mth, y = m.groups()
+            try:
+                date_str = datetime.strptime(f"{y}-{int(mth):02d}-{int(d):02d}", "%Y-%m-%d").strftime("%Y-%m-%d")
+            except ValueError:
+                date_str = None
+        else:
+            if "tomorrow" in lowered:
+                date_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            elif "today" in lowered:
+                date_str = datetime.now().strftime("%Y-%m-%d")
+    result["date"] = date_str
+
+    # Name: if email present, infer from local-part; else look for patterns like "for <Name>"
+    if result["email"] and not result["name"]:
+        local = result["email"].split("@")[0]
+        parts = re.split(r"[._-]+", local)
+        result["name"] = " ".join(p.capitalize() for p in parts if p)
+    if not result["name"]:
+        m = re.search(r"for\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", prompt)
+        if m:
+            result["name"] = m.group(1)
+
+    # Assignees after words like assign/cc: gather @mentions
+    assignee_matches = re.findall(r"@([A-Za-z0-9._-]+)", prompt)
+    if assignee_matches:
+        mentions = ["@" + u for u in assignee_matches]
+        if result["intern_mention"] in mentions:
+            mentions = [m for m in mentions if m != result["intern_mention"]]
+        # de-dupe, max 5
+        seen = []
+        uniq = []
+        for mnt in mentions:
+            if mnt not in seen:
+                seen.append(mnt)
+                uniq.append(mnt)
+        result["assignees"] = uniq[:5]
+
+    # Extract role/responsibilities phrases after keywords
+    m = re.search(r"role\s*:\s*(.+?)(?:\.|\n|$)", prompt, re.IGNORECASE)
+    if m:
+        result["role_info"] = m.group(1).strip()
+    m = re.search(r"responsibilit(?:y|ies)\s*:\s*(.+?)(?:\.|\n|$)", prompt, re.IGNORECASE)
+    if m and not result["role_info"]:
+        result["role_info"] = m.group(1).strip()
+
+    # Supervisor name patterns
+    m = re.search(r"supervisor\s*:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", prompt)
+    if m:
+        result["supervisor"] = m.group(1)
+    m = re.search(r"manager\s*:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", prompt)
+    if m and not result["supervisor"]:
+        result["supervisor"] = m.group(1)
+
+    # Office address & map link
+    m = re.search(r"address\s*:\s*(.+?)(?:\n|$)", prompt, re.IGNORECASE)
+    if m:
+        result["office_address"] = m.group(1).strip()
+    m = re.search(r"(https?://\S+maps\S+|https?://goo\.gl/\S+)", prompt)
+    if m:
+        result["map_link"] = m.group(1)
+
+    return result
+
+
+@mcp.tool()
+def onboard_intern_from_prompt(prompt: str) -> Dict:
+    """
+    Parse a natural-language prompt and trigger onboarding (Slack welcome + email + inventory message).
+    Example: "Welcome @max (max@example.com) starting tomorrow in Cologne. Assign @sarah @tom to handle inventory."
+    """
+    parsed = _parse_onboarding_prompt(prompt)
+    name = parsed.get("name") or "New Intern"
+    email = parsed.get("email") or ("intern@" + datetime.now().strftime("%Y%m%d") + ".example.com")
+    city = parsed.get("city") or "Berlin"
+    date = parsed.get("date")
+    intern_mention = parsed.get("intern_mention")
+    assignees = parsed.get("assignees", [])
+
+    res = onboard_intern(
+        intern_name=name,
+        intern_email=email,
+        city=city,
+        preferred_pickup_date=date,
+        intern_slack_mention=intern_mention,
+        notify_channel=True,
+        role_info=parsed.get("role_info"),
+        supervisor_name=parsed.get("supervisor"),  # if None, default ML supervisor is used
+        office_address=parsed.get("office_address"),
+        map_link=parsed.get("map_link"),
+        inventory_assignees_csv=",".join(assignees) if assignees else None,  # if None, default equipment handlers are used
+    )
+    res["parsed"] = parsed
+    return res
+
+
+@mcp.tool()
+def onboard_intern_direct(
+    intern_name: str,
+    intern_email: str,
+    city: str,
+    pickup_date: str | None = None,
+    intern_slack_mention: str | None = None,
+    role_info: str | None = None,
+    supervisor_name: str | None = None,
+    office_address: str | None = None,
+    map_link: str | None = None,
+    inventory_assignees_csv: str | None = None,
+) -> Dict:
+    """
+    Explicit version (no parsing). Sends Slack welcome first, then email, then inventory message.
+    Use when you want reliable sending without relying on prompt extraction.
+    """
+    return onboard_intern(
+        intern_name=intern_name,
+        intern_email=intern_email,
+        city=city,
+        preferred_pickup_date=pickup_date,
+        intern_slack_mention=intern_slack_mention,
+        notify_channel=True,
+        role_info=role_info,
+        supervisor_name=supervisor_name,  # if None, default ML supervisor is used
+        office_address=office_address,
+        map_link=map_link,
+        inventory_assignees_csv=inventory_assignees_csv,  # if None, default equipment handlers are used
+    )
+
+
+@mcp.tool()
+def onboard_intern_by_name(
+    intern_name: str,
+    city: str,
+    pickup_date: str | None = None,
+    role_info: str | None = None,
+    supervisor_name: str | None = None,
+    office_address: str | None = None,
+    map_link: str | None = None,
+) -> Dict:
+    """
+    Onboard using only the intern's name. Email and Slack mention are looked up
+    from the employee directory. Falls back to configured default recipient.
+    """
+    # Look up contacts
+    # Use directory -> welcome fallback, not manager alerts address
+    email = get_email_for_name(intern_name, employee_dir) or email_service.config.default_welcome_email
+    mention = get_slack_for_name(intern_name, employee_dir)
+
+    return onboard_intern(
+        intern_name=intern_name,
+        intern_email=email,
+        city=city,
+        preferred_pickup_date=pickup_date,
+        intern_slack_mention=mention,
+        notify_channel=True,
+        role_info=role_info,
+        supervisor_name=supervisor_name,
+        office_address=office_address,
+        map_link=map_link,
+        inventory_assignees_csv=None,
+    )
+
+@mcp.tool()
+def remove_indian_location_rows() -> Dict:
+    """Delete rows where location is an Indian city to resolve duplicates after migration."""
+    indian = [
+        "Bengaluru", "Bangalore", "Mumbai", "Bombay", "Delhi", "New Delhi", "Pune",
+        "Kolkata", "Calcutta", "Chennai", "Hyderabad"
+    ]
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor()
+    format_strings = ",".join(["%s"] * len(indian))
+    cursor.execute(f"DELETE FROM inventory WHERE location IN ({format_strings})", tuple(indian))
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return {"deleted": int(deleted)}
+
+
+@mcp.tool()
+def normalize_item_ids() -> Dict:
+    """
+    Normalize item IDs to group formats:
+      Laptops -> LAP-###, Mobiles -> MOB-###, Tablets -> TAB-###, Accessories -> ACC-###
+    Only renames items that do not already match their group pattern.
+    """
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("SELECT item_id, product_name, location FROM inventory")
+    rows = cursor.fetchall()
+
+    def category(name: str) -> Optional[str]:
+        n = name.lower()
+        if "laptop" in n or "macbook" in n or "thinkpad" in n:
+            return "LAP"
+        if "iphone" in n or "samsung" in n or "oneplus" in n or "pixel" in n or "xiaomi" in n or "realme" in n:
+            return "MOB"
+        if "tab" in n or "ipad" in n or "surface" in n:
+            return "TAB"
+        return "ACC"
+
+    # Find current max numbers per category
+    max_idx = {"LAP": 0, "MOB": 0, "TAB": 0, "ACC": 0}
+    pattern = re.compile(r"^(LAP|MOB|TAB|ACC)-(\d{3})$")
+    for r in rows:
+        m = pattern.match(r["item_id"]) if r["item_id"] else None
+        if m:
+            grp, num = m.groups()
+            max_idx[grp] = max(max_idx[grp], int(num))
+
+    updates = []
+    for r in rows:
+        grp = category(r["product_name"]) or "ACC"
+        if pattern.match(r["item_id"] or "") and r["item_id"].startswith(grp):
+            continue  # already normalized
+        # Assign next id
+        max_idx[grp] += 1
+        new_id = f"{grp}-{max_idx[grp]:03d}"
+        updates.append((new_id, r["item_id"], r["location"]))
+
+    # Apply updates carefully, respecting composite PK (item_id, location)
+    updated = 0
+    for new_id, old_id, loc in updates:
+        # If target id/location exists, skip to avoid PK conflict
+        cursor2 = conn.cursor()
+        cursor2.execute(
+            "SELECT 1 FROM inventory WHERE item_id=%s AND location=%s",
+            (new_id, loc),
+        )
+        exists = cursor2.fetchone() is not None
+        cursor2.close()
+        if exists:
+            continue
+        cursor3 = conn.cursor()
+        cursor3.execute(
+            "UPDATE inventory SET item_id=%s WHERE item_id=%s AND location=%s",
+            (new_id, old_id, loc),
+        )
+        if cursor3.rowcount:
+            updated += int(cursor3.rowcount)
+        cursor3.close()
+
+    conn.commit()
+    conn.close()
+    return {"renamed": updated}
+
+
+@mcp.tool()
+def low_stock(threshold: int = 3) -> List[Dict]:
     """
     Get items with quantity at or below threshold - foundation for automation alerts
     """
@@ -107,6 +630,49 @@ def low_stock(threshold: int = 5) -> List[Dict]:
     rows = cursor.fetchall()
     conn.close()
     return rows
+
+
+@mcp.tool()
+def check_stock_status() -> Dict:
+    """
+    Check current stock status and provide intelligent recommendations
+    """
+    # Get low stock items (threshold = 3)
+    low_stock_items = low_stock(3)
+    
+    # Get summary
+    summary = inventory_summary()
+    
+    # Determine status and recommendations
+    critical_count = len([item for item in low_stock_items if item['quantity'] <= 3])
+    warning_count = len([item for item in low_stock_items if item['quantity'] > 3])
+    
+    if critical_count > 0:
+        status = "🔴 CRITICAL"
+        message = f"URGENT: {critical_count} items are critically low (≤3 units). Immediate restocking required!"
+        action = "send_email_alert() and send_slack_alert()"
+    elif warning_count > 0:
+        status = "🟡 WARNING" 
+        message = f"CAUTION: {warning_count} items are running low (4-10 units). Plan restocking within 1 week."
+        action = "Monitor closely and prepare purchase orders"
+    else:
+        status = "✅ HEALTHY"
+        message = "All items have adequate stock levels. No immediate action required."
+        action = "Continue regular monitoring"
+    
+    return {
+        "status": status,
+        "message": message,
+        "recommended_action": action,
+        "critical_items": critical_count,
+        "warning_items": warning_count,
+        "total_items": summary["total_items"],
+        "low_stock_count": summary["low_stock_count"],
+        "details": {
+            "critical_items": [item for item in low_stock_items if item['quantity'] <= 3],
+            "warning_items": [item for item in low_stock_items if item['quantity'] > 3]
+        }
+    }
 
 
 @mcp.tool()
@@ -146,7 +712,7 @@ def inventory_summary() -> Dict:
 
 
 @mcp.tool()
-def send_slack_alert(threshold: int = 5) -> Dict:
+def send_slack_alert(threshold: int = 3) -> Dict:
     """
     Send low stock alert to Slack - automation foundation
     """
@@ -198,7 +764,7 @@ def test_slack_connection() -> Dict:
 
 
 @mcp.tool()
-def send_email_alert(threshold: int = 5) -> Dict:
+def send_email_alert(threshold: int = 3) -> Dict:
     """
     Send low stock alert via email - automation foundation
     """
@@ -236,6 +802,31 @@ def send_daily_summary_email() -> Dict:
 
 
 @mcp.tool()
+def diagnose_email(to_email: str | None = None) -> Dict:
+    """Send a minimal test email and report SMTP env configuration.
+
+    Use this if recipients aren't receiving emails. It will not log secrets.
+    """
+    subject = "SMTP Diagnostic from Inventory MCP"
+    body = "<html><body><p>This is a diagnostic test.</p></body></html>"
+    target = to_email or email_service.config.to_email
+    result = email_service.send_email(
+        to_email=target,
+        subject=subject,
+        body=body,
+        is_html=True,
+    )
+    config_report = {
+        "smtp_server": email_service.config.smtp_server,
+        "smtp_port": email_service.config.smtp_port,
+        "from_email": email_service.config.from_email,
+        "username_present": bool(email_service.config.username),
+        "password_present": bool(email_service.config.password),
+    }
+    return {"send_result": result, "config": config_report}
+
+
+@mcp.tool()
 def test_email_connection() -> Dict:
     """
     Test email SMTP connection - verify integration works
@@ -265,7 +856,7 @@ def test_email_connection() -> Dict:
 
 
 @mcp.tool()
-def send_combined_alert(threshold: int = 5) -> Dict:
+def send_combined_alert(threshold: int = 3) -> Dict:
     """
     Send low stock alert to both Slack and Email - full automation
     """
@@ -289,7 +880,7 @@ def send_combined_alert(threshold: int = 5) -> Dict:
 
 
 @mcp.tool()
-def auto_reorder_low_stock(threshold: int = 5) -> Dict:
+def auto_reorder_low_stock(threshold: int = 3) -> Dict:
     """
     Automatically create purchase orders for low stock items - REAL BUSINESS VALUE
     """

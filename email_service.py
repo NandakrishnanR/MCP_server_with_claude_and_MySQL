@@ -70,45 +70,101 @@ class EmailService:
         map_link: Optional[str] = None,
         low_stock_items: Optional[List[Dict]] = None,
     ) -> Dict:
-        """Send a professional onboarding email to the new intern with pickup details.
+        """Send a professional onboarding email to the new intern with detailed pickup information.
 
-        Optionally includes a low-stock section if shortages exist.
+        This email is ONLY for the intern - no inventory alerts included.
         """
+        # Professional company links
         links_html = """
-        <ul style=\"line-height:1.6\">
-            <li><a href=\"https://intranet.example.com/handbook\">Company Handbook</a></li>
-            <li><a href=\"https://intranet.example.com/security\">Security & Compliance</a></li>
-            <li><a href=\"https://intranet.example.com/it/vpn\">VPN & Accounts Setup</a></li>
-            <li><a href=\"https://intranet.example.com/helpdesk\">IT Helpdesk</a></li>
+        <ul style=\"line-height:1.8;margin:20px 0\">
+            <li><a href=\"https://intranet.aiitech.com/employee-handbook\" style=\"color:#2E86AB;text-decoration:none\">📖 Employee Handbook & Policies</a></li>
+            <li><a href=\"https://intranet.aiitech.com/security-compliance\" style=\"color:#2E86AB;text-decoration:none\">🔒 Security & Compliance Guidelines</a></li>
+            <li><a href=\"https://intranet.aiitech.com/it-setup\" style=\"color:#2E86AB;text-decoration:none\">💻 IT Setup & VPN Configuration</a></li>
+            <li><a href=\"https://intranet.aiitech.com/helpdesk\" style=\"color:#2E86AB;text-decoration:none\">🆘 IT Helpdesk & Support</a></li>
+            <li><a href=\"https://intranet.aiitech.com/benefits\" style=\"color:#2E86AB;text-decoration:none\">🎁 Employee Benefits & Perks</a></li>
         </ul>
         """
 
-        low_stock_section = self._render_low_stock_section(low_stock_items or [])
-
+        # Professional email body with detailed pickup information
         body = f"""
         <html>
-        <body style=\"font-family:Arial,sans-serif\">
-            <p>Dear {intern_name},</p>
-            <p style=\"font-size:15px\">Welcome to <strong>AIITECH</strong>! We are excited to have you join us in {city}. Below are your first‑day essentials and useful links to get started.</p>
+        <head>
+            <style>
+                body {{ font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .header {{ background: linear-gradient(135deg, #2E86AB, #A23B72); color: white; padding: 30px; border-radius: 8px; margin-bottom: 30px; }}
+                .content {{ padding: 20px; }}
+                .pickup-box {{ background: #f8f9fa; border-left: 4px solid #2E86AB; padding: 20px; margin: 20px 0; border-radius: 4px; }}
+                .equipment-list {{ background: #e8f4f8; padding: 15px; border-radius: 6px; margin: 15px 0; }}
+                .footer {{ margin-top: 40px; padding-top: 20px; border-top: 2px solid #e9ecef; }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1 style=\"margin:0;font-size:28px\">🎉 Welcome to AIITECH!</h1>
+                <p style=\"margin:10px 0 0 0;font-size:16px;opacity:0.9\">We're thrilled to have you join our team in {city}</p>
+            </div>
+            
+            <div class="content">
+                <p>Dear <strong>{intern_name}</strong>,</p>
+                
+                <p>Welcome to <strong>AIITECH</strong>! We're excited to have you join our innovative team. This email contains everything you need for a smooth first day and successful onboarding.</p>
 
-            {f'<p><strong>Role:</strong> {role_info}</p>' if role_info else ''}
-            {f'<p><strong>Supervisor:</strong> {supervisor_name}</p>' if supervisor_name else ''}
-            {f'<p><strong>Office:</strong> {office_address} (<a href="{map_link}">Map</a>)</p>' if office_address else ''}
+                <h2 style=\"color:#2E86AB;margin-top:30px\">👤 Your Role & Team</h2>
+                {f'<p><strong>Position:</strong> {role_info}</p>' if role_info else '<p><strong>Position:</strong> Intern</p>'}
+                {f'<p><strong>Supervisor:</strong> {supervisor_name}</p>' if supervisor_name else '<p><strong>Supervisor:</strong> Anna Schmidt (ML Team Lead)</p>'}
+                {f'<p><strong>Office Location:</strong> {office_address} {f"<a href=\"{map_link}\" style=\"color:#2E86AB\">(View Map)</a>" if map_link else ""}</p>' if office_address else ''}
 
-            <h3 style=\"margin-top:24px\">🎒 Equipment Pickup</h3>
-            <p>Please collect your laptop and accessories from <strong>{pickup_location}</strong> on <strong>{pickup_date}</strong>. Bring a valid ID for verification.</p>
+                <h2 style=\"color:#2E86AB;margin-top:30px\">💻 Equipment Pickup Details</h2>
+                <div class="pickup-box">
+                    <h3 style=\"margin-top:0;color:#2E86AB\">📅 When & Where</h3>
+                    <p><strong>Date:</strong> {pickup_date}</p>
+                    <p><strong>Location:</strong> {pickup_location} Office</p>
+                    <p><strong>Time:</strong> 9:00 AM - 5:00 PM (Business Hours)</p>
+                    <p><strong>Contact:</strong> Maria (Equipment Handler) - maria@aiitech.com</p>
+                    
+                    <h3 style=\"color:#2E86AB\">🆔 What to Bring</h3>
+                    <ul>
+                        <li>Valid government-issued ID</li>
+                        <li>Signed employment contract</li>
+                        <li>Emergency contact information</li>
+                    </ul>
+                </div>
 
-            <h3>📚 Useful Links</h3>
-            {links_html}
+                <div class="equipment-list">
+                    <h3 style=\"margin-top:0;color:#2E86AB\">🎒 Your Equipment Package</h3>
+                    <ul>
+                        <li><strong>Laptop:</strong> MacBook Air M2 13" (or equivalent based on role)</li>
+                        <li><strong>Accessories:</strong> Wireless mouse, keyboard, USB-C hub</li>
+                        <li><strong>Security:</strong> VPN access, company email account</li>
+                        <li><strong>Software:</strong> Development tools, Microsoft Office Suite</li>
+                        <li><strong>Documentation:</strong> Setup guides, security policies</li>
+                    </ul>
+                </div>
 
-            {self._company_signature()}
+                <h2 style=\"color:#2E86AB;margin-top:30px\">📚 Essential Resources</h2>
+                <p>Bookmark these important links for your first week:</p>
+                {links_html}
+
+                <h2 style=\"color:#2E86AB;margin-top:30px\">📞 Need Help?</h2>
+                <p>Don't hesitate to reach out if you have any questions:</p>
+                <ul>
+                    <li><strong>IT Support:</strong> helpdesk@aiitech.com | +49 30 1234 5678</li>
+                    <li><strong>HR Department:</strong> hr@aiitech.com | +49 30 1234 5679</li>
+                    <li><strong>Your Supervisor:</strong> {supervisor_name or 'Anna Schmidt'} | {supervisor_name.lower().replace(' ', '.') + '@aiitech.com' if supervisor_name else 'anna.schmidt@aiitech.com'}</li>
+                </ul>
+            </div>
+
+            <div class="footer">
+                <p style=\"font-size:14px;color:#666;margin:0\">We're looking forward to working with you!</p>
+                <p style=\"font-size:14px;color:#666;margin:5px 0 0 0\">Best regards,<br><strong>The AIITECH Team</strong></p>
+            </div>
         </body>
         </html>
         """
 
         return self.send_email(
             to_email=to_email,
-            subject=f"Welcome to AIITECH, {intern_name}!",
+            subject=f"🎉 Welcome to AIITECH, {intern_name}! - Equipment Pickup Details",
             body=body,
             is_html=True,
         )

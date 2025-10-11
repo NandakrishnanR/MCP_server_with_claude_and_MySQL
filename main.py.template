@@ -244,10 +244,11 @@ def onboard_intern(
 
     return {
         "slack": slack_res,
-        "email": email_res,
+        "intern_email": email_res,
+        "manager_email": manager_email_sent,
         "pickup_location": pickup_location,
         "pickup_date": pickup_date,
-        "shortages_included": isinstance(shortages, list) and len(shortages) > 0,
+        "shortages_found": isinstance(shortages, list) and len(shortages) > 0,
         "inventory_message": inv_msg,
     }
 
