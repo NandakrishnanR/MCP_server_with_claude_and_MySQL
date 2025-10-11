@@ -40,9 +40,8 @@ class EmployeeDirectory:
 _DEFAULT_DIRECTORY = {
     "people": {
         "anna schmidt": {"email": "anna.schmidt@example.com", "slack_id": "@anna"},
-        "sarah": {"email": "sarah@example.com", "slack_id": "@sarah"},
-        "tom": {"email": "tom@example.com", "slack_id": "@tom"},
         "maria": {"email": "maria@example.com", "slack_id": "@maria"},
+        "tom": {"email": "tom@example.com", "slack_id": "@tom"},
         "john antony": {"email": "johnantonysaviour@gmail.com", "slack_id": "@john"},
         "john antony saviour": {"email": "johnantonysaviour@gmail.com", "slack_id": "@john"},
     },

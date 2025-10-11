@@ -194,16 +194,10 @@ class SlackService:
         return self.send_message(text, blocks)
 
     def send_welcome_message(self, intern_name: str, city: str, pickup_location: str, pickup_date: str, intern_slack_mention: str | None = None, notify_channel: bool = True, role_info: str | None = None, supervisor_name: str | None = None, office_address: str | None = None, map_link: str | None = None) -> Dict:
-        """Send a professional warm corporate greeting to Slack.
-
-        intern_slack_mention: e.g., "@john" or "<@U123>". We pass through to allow real mentions.
-        notify_channel: if True, prepend <!channel> to notify everyone in the channel.
-        role_info: brief responsibilities/role to include in the message
-        supervisor_name: optional supervisor/mentor to tag by name only (you can include @mention in role_info if desired)
-        """
-        audience = "<!channel> " if notify_channel else ""
-        who = f"{intern_slack_mention} ({intern_name})" if intern_slack_mention else intern_name
-        text = f"{audience}Welcome {who} to AIITECH! 🎉"
+        """Send a professional corporate welcome message to Slack."""
+        
+        # Professional welcome message
+        text = f"Welcome {intern_name} to AIITECH! 🎉"
         blocks = [
             {
                 "type": "header",
@@ -213,75 +207,104 @@ class SlackService:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": (
-                        f"{audience}Hi team, please join me in welcoming *{who}* to our {city} office!\n\n"
-                        + (f"• Role: {role_info}\n" if role_info else "")
-                        + (f"• Supervisor: {supervisor_name}\n" if supervisor_name else "")
-                        + f"• Equipment pickup: *{pickup_location}* on *{pickup_date}*\n"
-                        + (f"• Office: {office_address} ({map_link})\n" if office_address else "")
-                        + "• Please share onboarding tips and resources."
-                    )
+                    "text": f"Dear Team,\n\nPlease join me in welcoming *{intern_name}* to our {city} office!\n\n{f'**Role:** {role_info}\n' if role_info else ''}{f'**Supervisor:** {supervisor_name}\n' if supervisor_name else ''}**Equipment Pickup:** {pickup_location} on {pickup_date}\n{f'**Office:** {office_address}\n' if office_address else ''}\nWe're excited to have you join our team!"
                 }
+            },
+            {
+                "type": "divider"
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"📧 **Microsoft Account Setup:** Please contact @maria for Microsoft account configuration and VPN access.\n\n📞 **IT Support:** helpdesk@aiitech.com | +49 30 1234 5678"
+                }
+            },
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"Best regards,\n**AIITECH Operations Team**\nManaging Director: Dr. Anna Schmidt\nEmail: operations@aiitech.com"
+                    }
+                ]
             }
         ]
+        
         return self.send_message(text, blocks)
 
     def send_inventory_update_message(self, low_stock_items: List[Dict], assignees: Optional[List[str]] = None, notify_channel: bool = False) -> Dict:
-        """Send a follow-up message with inventory actions, tagging colleagues.
-
-        assignees: list like ["@sarah", "@tom"]. We'll rotate them across locations.
-        """
+        """Send a professional inventory update message."""
         if not low_stock_items:
             return {"status": "no_updates"}
-
-        audience = "<!channel> " if notify_channel else ""
-        text = f"{audience}Inventory updates required"
 
         # Group by location
         location_groups: Dict[str, List[Dict]] = {}
         for item in low_stock_items:
             location_groups.setdefault(item["location"], []).append(item)
 
-        blocks: List[Dict] = [
+        text = f"📊 Inventory Alert: {len(low_stock_items)} items require attention"
+        blocks = [
             {
                 "type": "header",
-                "text": {"type": "plain_text", "text": "Inventory Updates Required"}
+                "text": {"type": "plain_text", "text": "📊 Inventory Stock Alert"}
             },
             {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"{audience}We have *{len(low_stock_items)} items* needing attention across *{len(location_groups)} locations*."
+                    "text": f"**Executive Summary:**\n• {len(low_stock_items)} items require immediate attention\n• {len(location_groups)} locations affected\n• Critical action required to prevent stockouts"
                 }
             }
         ]
 
-        assignees = assignees or []
-        for i, (location, items) in enumerate(location_groups.items()):
-            critical = [it for it in items if int(it.get("quantity", 0)) <= 3]
-            warning = [it for it in items if int(it.get("quantity", 0)) > 3]
-            mention = assignees[i % len(assignees)] if assignees else "@ops"
-            txt = f"📍 *{location}* — {len(items)} items\n"
-            if critical:
-                txt += "🔴 *Critical:*\n" + "\n".join(
-                    [f"• {it['product_name']} ({it['item_id']}) — {it['quantity']} left" for it in critical[:4]]
-                )
-                if len(critical) > 4:
-                    txt += f"\n• ... and {len(critical) - 4} more"
-            if warning:
-                txt += "\n🟡 *Warning:*\n" + "\n".join(
-                    [f"• {it['product_name']} ({it['item_id']}) — {it['quantity']} left" for it in warning[:3]]
-                )
-                if len(warning) > 3:
-                    txt += f"\n• ... and {len(warning) - 3} more"
-            txt += f"\n👤 {mention} — please review and update inventory."
+        # Add location-specific details
+        for location, items in location_groups.items():
+            critical_items = [item for item in items if int(item.get("quantity", 0)) <= 3]
+            warning_items = [item for item in items if int(item.get("quantity", 0)) > 3]
+            
+            location_text = f"**📍 {location} Location**\n"
+            
+            if critical_items:
+                location_text += f"🔴 **Critical ({len(critical_items)} items):**\n"
+                for item in critical_items[:3]:
+                    location_text += f"• {item['product_name']} ({item['item_id']}) - {item['quantity']} units\n"
+                if len(critical_items) > 3:
+                    location_text += f"• ... and {len(critical_items) - 3} more critical items\n"
+            
+            if warning_items:
+                location_text += f"🟡 **Warning ({len(warning_items)} items):**\n"
+                for item in warning_items[:2]:
+                    location_text += f"• {item['product_name']} ({item['item_id']}) - {item['quantity']} units\n"
+                if len(warning_items) > 2:
+                    location_text += f"• ... and {len(warning_items) - 2} more warning items\n"
 
-            blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": txt}})
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": location_text}
+            })
 
-        blocks.append({"type": "divider"})
-        blocks.append({
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": "Next steps:\n• Check physical stock\n• Contact suppliers\n• Update system quantities"}
-        })
+        # Add action items
+        blocks.extend([
+            {
+                "type": "divider"
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "**📋 Action Required:**\n• Contact suppliers for immediate restocking\n• Update inventory levels\n• Plan bulk orders for cost reduction\n• Review safety stock levels"
+                }
+            },
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"Report generated: {self._get_current_time()} | AIITECH Inventory Management System"
+                    }
+                ]
+            }
+        ])
 
         return self.send_message(text, blocks)
