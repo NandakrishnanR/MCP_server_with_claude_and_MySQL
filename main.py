@@ -19,22 +19,7 @@ from employee_directory import (
 # Load environment variables
 load_dotenv()
 
-# Set default environment variables if not set (for Claude Desktop compatibility)
-import os
-if not os.getenv('EMAIL_USERNAME'):
-    os.environ['EMAIL_USERNAME'] = 'rnandakrishnan2001@gmail.com'
-if not os.getenv('EMAIL_PASSWORD'):
-    os.environ['EMAIL_PASSWORD'] = 'fjcl jkxb uhhn jabj'
-if not os.getenv('FROM_EMAIL'):
-    os.environ['FROM_EMAIL'] = 'rnandakrishnan2001@gmail.com'
-if not os.getenv('TO_EMAIL'):
-    os.environ['TO_EMAIL'] = 'nandakrishnan.rajeev@gmail.com'
-if not os.getenv('SLACK_WEBHOOK_URL'):
-    os.environ['SLACK_WEBHOOK_URL'] = 'YOUR_SLACK_WEBHOOK_URL_HERE'
-if not os.getenv('SLACK_CHANNEL'):
-    os.environ['SLACK_CHANNEL'] = '#all-mcp-server-testing'
-if not os.getenv('SLACK_USERNAME'):
-    os.environ['SLACK_USERNAME'] = 'Inventory Automation Bot'
+# Environment variables are loaded from .env file or system environment
 
 mcp = FastMCP(name="inventory_mcp")
 
@@ -495,6 +480,29 @@ def onboard_intern_direct(
         map_link=map_link,
         inventory_assignees_csv=inventory_assignees_csv,  # if None, default equipment handlers are used
     )
+
+
+@mcp.tool()
+def debug_onboarding_flow(intern_name: str, city: str) -> Dict:
+    """Debug the onboarding flow to check email separation."""
+    # Get low stock items
+    shortages = low_stock(3)
+    
+    # Test manager email
+    manager_email_result = None
+    if isinstance(shortages, list) and shortages:
+        manager_email_result = email_service.send_low_stock_alert(shortages)
+    
+    return {
+        "low_stock_items_found": len(shortages) if isinstance(shortages, list) else 0,
+        "manager_email_config": {
+            "to_email": email_service.config.to_email,
+            "from_email": email_service.config.from_email,
+            "smtp_server": email_service.config.smtp_server
+        },
+        "manager_email_result": manager_email_result,
+        "shortages_sample": shortages[:3] if isinstance(shortages, list) and shortages else []
+    }
 
 
 @mcp.tool()
