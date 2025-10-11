@@ -31,6 +31,8 @@ class EmailService:
             
             # Send email
             context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
             with smtplib.SMTP(self.config.smtp_server, self.config.smtp_port) as server:
                 server.starttls(context=context)
                 server.login(self.config.username, self.config.password)
@@ -41,51 +43,197 @@ class EmailService:
         except Exception as e:
             return {"error": f"Failed to send email: {str(e)}"}
     
+    def _company_signature(self) -> str:
+        """Professional company signature block."""
+        return f"""
+        <table style=\"margin-top:20px;border-left:4px solid #2E86AB;padding-left:12px;font-family:Arial,sans-serif;\">
+            <tr><td style=\"font-weight:bold;font-size:14px;\">AIITECH Ops</td></tr>
+            <tr><td style=\"color:#555;\">Inventory & Onboarding Automation</td></tr>
+            <tr><td style=\"color:#555;\">Email: {self.config.from_email}</td></tr>
+        </table>
+        """
+
+    def _render_low_stock_section(self, low_stock_items: List[Dict]) -> str:
+        # For intern welcome emails, do not include inventory table.
+        return ""
+
+    def send_intern_welcome_email(
+        self,
+        intern_name: str,
+        to_email: str,
+        city: str,
+        pickup_location: str,
+        pickup_date: str,
+        role_info: Optional[str] = None,
+        supervisor_name: Optional[str] = None,
+        office_address: Optional[str] = None,
+        map_link: Optional[str] = None,
+        low_stock_items: Optional[List[Dict]] = None,
+    ) -> Dict:
+        """Send a professional onboarding email to the new intern with pickup details.
+
+        Optionally includes a low-stock section if shortages exist.
+        """
+        links_html = """
+        <ul style=\"line-height:1.6\">
+            <li><a href=\"https://intranet.example.com/handbook\">Company Handbook</a></li>
+            <li><a href=\"https://intranet.example.com/security\">Security & Compliance</a></li>
+            <li><a href=\"https://intranet.example.com/it/vpn\">VPN & Accounts Setup</a></li>
+            <li><a href=\"https://intranet.example.com/helpdesk\">IT Helpdesk</a></li>
+        </ul>
+        """
+
+        low_stock_section = self._render_low_stock_section(low_stock_items or [])
+
+        body = f"""
+        <html>
+        <body style=\"font-family:Arial,sans-serif\">
+            <p>Dear {intern_name},</p>
+            <p style=\"font-size:15px\">Welcome to <strong>AIITECH</strong>! We are excited to have you join us in {city}. Below are your first‑day essentials and useful links to get started.</p>
+
+            {f'<p><strong>Role:</strong> {role_info}</p>' if role_info else ''}
+            {f'<p><strong>Supervisor:</strong> {supervisor_name}</p>' if supervisor_name else ''}
+            {f'<p><strong>Office:</strong> {office_address} (<a href="{map_link}">Map</a>)</p>' if office_address else ''}
+
+            <h3 style=\"margin-top:24px\">🎒 Equipment Pickup</h3>
+            <p>Please collect your laptop and accessories from <strong>{pickup_location}</strong> on <strong>{pickup_date}</strong>. Bring a valid ID for verification.</p>
+
+            <h3>📚 Useful Links</h3>
+            {links_html}
+
+            {self._company_signature()}
+        </body>
+        </html>
+        """
+
+        return self.send_email(
+            to_email=to_email,
+            subject=f"Welcome to AIITECH, {intern_name}!",
+            body=body,
+            is_html=True,
+        )
+
     def send_low_stock_alert(self, low_stock_items: List[Dict]) -> Dict:
         """
-        Send formatted low stock alert email
+        Send professional Excel-style low stock alert email
         """
         if not low_stock_items:
             return {"status": "no_alert", "message": "No low stock items"}
         
-        # Create HTML email body
+        # Group by location for better analysis
+        location_groups = {}
+        for item in low_stock_items:
+            location = item['location']
+            if location not in location_groups:
+                location_groups[location] = []
+            location_groups[location].append(item)
+        
+        # Create professional Excel-style HTML email
         html_body = f"""
         <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                .header {{ background-color: #2E86AB; color: white; padding: 15px; border-radius: 5px; }}
+                .summary {{ background-color: #F8F9FA; padding: 15px; border-left: 4px solid #DC3545; margin: 20px 0; }}
+                .location-section {{ margin: 20px 0; }}
+                .location-header {{ background-color: #6C757D; color: white; padding: 10px; font-weight: bold; }}
+                table {{ border-collapse: collapse; width: 100%; margin: 10px 0; }}
+                th {{ background-color: #E9ECEF; padding: 12px; text-align: left; border: 1px solid #DEE2E6; }}
+                td {{ padding: 10px; border: 1px solid #DEE2E6; }}
+                .critical {{ background-color: #F8D7DA; color: #721C24; font-weight: bold; }}
+                .warning {{ background-color: #FFF3CD; color: #856404; }}
+                .recommendation {{ background-color: #D1ECF1; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+            </style>
+        </head>
         <body>
-            <h2>🚨 Low Stock Alert</h2>
-            <p><strong>{len(low_stock_items)} items</strong> are running low on stock:</p>
-            <table border="1" style="border-collapse: collapse; width: 100%;">
-                <tr style="background-color: #f2f2f2;">
-                    <th>Item ID</th>
-                    <th>Product Name</th>
-                    <th>Location</th>
-                    <th>Current Quantity</th>
-                </tr>
+            <div class="header">
+                <h2>📊 Inventory Stock Analysis Report</h2>
+                <p>Generated: {self._get_current_time()}</p>
+            </div>
+            
+            <div class="summary">
+                <h3>🚨 Executive Summary</h3>
+                <p><strong>{len(low_stock_items)} items</strong> require immediate attention across <strong>{len(location_groups)} locations</strong>.</p>
+                <p><strong>Critical Action Required:</strong> Stock replenishment needed to prevent stockouts.</p>
+            </div>
         """
         
-        for item in low_stock_items:
+        # Add location-specific analysis
+        for location, items in location_groups.items():
+            critical_items = [item for item in items if item['quantity'] <= 3]
+            warning_items = [item for item in items if item['quantity'] > 3]
+            
             html_body += f"""
-                <tr>
-                    <td>{item['item_id']}</td>
-                    <td>{item['product_name']}</td>
-                    <td>{item['location']}</td>
-                    <td style="color: red; font-weight: bold;">{item['quantity']}</td>
-                </tr>
+            <div class="location-section">
+                <div class="location-header">📍 {location} - {len(items)} Items Requiring Attention</div>
+                <table>
+                    <tr>
+                        <th>Item ID</th>
+                        <th>Product Name</th>
+                        <th>Current Stock</th>
+                        <th>Priority</th>
+                        <th>Recommended Action</th>
+                    </tr>
+            """
+            
+            # Add critical items (red highlighting)
+            for item in critical_items:
+                html_body += f"""
+                    <tr class="critical">
+                        <td>{item['item_id']}</td>
+                        <td>{item['product_name']}</td>
+                        <td>{item['quantity']}</td>
+                        <td>🔴 CRITICAL</td>
+                        <td>Immediate restock required</td>
+                    </tr>
+                """
+            
+            # Add warning items (yellow highlighting)
+            for item in warning_items:
+                html_body += f"""
+                    <tr class="warning">
+                        <td>{item['item_id']}</td>
+                        <td>{item['product_name']}</td>
+                        <td>{item['quantity']}</td>
+                        <td>🟡 WARNING</td>
+                        <td>Plan restock within 1 week</td>
+                    </tr>
+                """
+            
+            html_body += """
+                </table>
+            </div>
             """
         
-        html_body += """
-            </table>
-            <p><em>Please check inventory and consider reordering.</em></p>
+        # Add recommendations
+        html_body += f"""
+            <div class="recommendation">
+                <h3>💡 Strategic Recommendations</h3>
+                <ul>
+                    <li><strong>Priority Locations:</strong> Focus on {', '.join(location_groups.keys())} for immediate restocking</li>
+                    <li><strong>Critical Items:</strong> {len([item for item in low_stock_items if item['quantity'] <= 3])} items need immediate attention</li>
+                    <li><strong>Vendor Coordination:</strong> Contact suppliers for bulk orders to reduce costs</li>
+                    <li><strong>Inventory Planning:</strong> Consider increasing safety stock levels for high-demand items</li>
+                </ul>
+            </div>
+            
+            <p><em>This report was generated automatically by the Inventory Management System.</em></p>
         </body>
         </html>
         """
         
         return self.send_email(
             to_email=self.config.to_email,
-            subject="🚨 Low Stock Alert - Immediate Action Required",
+            subject=f"📊 Inventory Stock Analysis - {len(low_stock_items)} Items Requiring Attention",
             body=html_body,
             is_html=True
         )
+    
+    def _get_current_time(self):
+        """Get current timestamp"""
+        from datetime import datetime
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     def send_daily_summary(self, summary_data: Dict) -> Dict:
         """
