@@ -67,85 +67,119 @@ class EmailService:
         map_link: Optional[str] = None,
         low_stock_items: Optional[List[Dict]] = None,
     ) -> Dict:
-        """Send a clean professional onboarding email to the intern - NO inventory data."""
+        """Send a completely automated professional onboarding email - NO inventory data."""
         
         # Generate supervisor email
         supervisor_email = 'anna.schmidt@aiitech.com'
         if supervisor_name:
             supervisor_email = supervisor_name.lower().replace(' ', '.') + '@aiitech.com'
         
-        # Clean professional email body
+        # Professional automated email body
         body = f"""
         <html>
         <head>
             <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .header {{ background: #2E86AB; color: white; padding: 20px; border-radius: 5px; }}
-                .content {{ padding: 20px; }}
-                .pickup-box {{ background: #f8f9fa; border-left: 4px solid #2E86AB; padding: 15px; margin: 15px 0; }}
-                .equipment-list {{ background: #e8f4f8; padding: 15px; border-radius: 5px; margin: 15px 0; }}
-                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 2px solid #e9ecef; }}
+                body {{ font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }}
+                .container {{ max-width: 600px; margin: 0 auto; background: #ffffff; }}
+                .header {{ background: linear-gradient(135deg, #2E86AB, #A23B72); color: white; padding: 30px; text-align: center; }}
+                .content {{ padding: 30px; }}
+                .pickup-box {{ background: #f8f9fa; border-left: 4px solid #2E86AB; padding: 20px; margin: 20px 0; border-radius: 4px; }}
+                .equipment-list {{ background: #e8f4f8; padding: 20px; border-radius: 6px; margin: 20px 0; }}
+                .contact-box {{ background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+                .footer {{ background: #2c3e50; color: white; padding: 25px; text-align: center; }}
+                .footer-content {{ max-width: 500px; margin: 0 auto; }}
+                h1 {{ margin: 0; font-size: 28px; }}
+                h2 {{ color: #2E86AB; margin-top: 25px; }}
+                h3 {{ color: #2E86AB; margin-top: 20px; }}
+                ul {{ padding-left: 20px; }}
+                li {{ margin-bottom: 8px; }}
+                .highlight {{ background: #fff3cd; padding: 2px 6px; border-radius: 3px; }}
             </style>
         </head>
         <body>
-            <div class="header">
-                <h1 style="margin:0">🎉 Welcome to AIITECH!</h1>
-                <p style="margin:10px 0 0 0">We're excited to have you join our team in {city}</p>
-            </div>
-            
-            <div class="content">
-                <p>Dear <strong>{intern_name}</strong>,</p>
-                
-                <p>Welcome to <strong>AIITECH</strong>! We're thrilled to have you join our innovative team.</p>
-
-                <h2 style="color:#2E86AB">👤 Your Role & Team</h2>
-                <p><strong>Position:</strong> {role_info or 'Intern'}</p>
-                <p><strong>Supervisor:</strong> {supervisor_name or 'Anna Schmidt'}</p>
-                {f'<p><strong>Office:</strong> {office_address}</p>' if office_address else ''}
-
-                <h2 style="color:#2E86AB">💻 Equipment Pickup</h2>
-                <div class="pickup-box">
-                    <p><strong>Date:</strong> {pickup_date}</p>
-                    <p><strong>Location:</strong> {pickup_location} Office</p>
-                    <p><strong>Time:</strong> 9:00 AM - 5:00 PM</p>
-                    <p><strong>Contact:</strong> Maria (Equipment Handler)</p>
-                    <p><strong>Bring:</strong> Valid ID, employment contract</p>
+            <div class="container">
+                <div class="header">
+                    <h1>🎉 Welcome to AIITECH!</h1>
+                    <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">We're excited to have you join our innovative team in {city}</p>
                 </div>
+                
+                <div class="content">
+                    <p>Dear <strong>{intern_name}</strong>,</p>
+                    
+                    <p>Welcome to <strong>AIITECH</strong>! We're thrilled to have you join our cutting-edge technology team. This automated onboarding system has prepared everything you need for a successful start.</p>
 
-                <div class="equipment-list">
-                    <h3 style="margin-top:0;color:#2E86AB">🎒 Your Equipment Package</h3>
+                    <h2>👤 Your Role & Team</h2>
+                    <p><strong>Position:</strong> {role_info or 'Intern'}</p>
+                    <p><strong>Supervisor:</strong> {supervisor_name or 'Anna Schmidt'} ({supervisor_email})</p>
+                    <p><strong>Office Location:</strong> {city} Office</p>
+                    {f'<p><strong>Office Address:</strong> {office_address}</p>' if office_address else ''}
+
+                    <h2>💻 Equipment Pickup - Automated Process</h2>
+                    <div class="pickup-box">
+                        <h3 style="margin-top: 0; color: #2E86AB;">📅 Automated Pickup Schedule</h3>
+                        <p><strong>Date:</strong> {pickup_date}</p>
+                        <p><strong>Location:</strong> {pickup_location} Office</p>
+                        <p><strong>Time:</strong> 9:00 AM - 5:00 PM (Business Hours)</p>
+                        <p><strong>Contact:</strong> Maria (Equipment Handler) - maria@aiitech.com</p>
+                        <p><strong>Process:</strong> Fully automated - just bring your ID!</p>
+                        
+                        <h3 style="color: #2E86AB;">🆔 Required Documents</h3>
+                        <ul>
+                            <li>Valid government-issued ID</li>
+                            <li>Signed employment contract</li>
+                            <li>Emergency contact information</li>
+                        </ul>
+                    </div>
+
+                    <div class="equipment-list">
+                        <h3 style="margin-top: 0; color: #2E86AB;">🎒 Your Complete Equipment Package</h3>
+                        <ul>
+                            <li><strong>Laptop:</strong> MacBook Air M2 13" (pre-configured)</li>
+                            <li><strong>Accessories:</strong> Wireless mouse, mechanical keyboard, USB-C hub</li>
+                            <li><strong>Software:</strong> Development tools, Microsoft Office Suite, VPN client</li>
+                            <li><strong>Access:</strong> Company email, VPN, development servers</li>
+                            <li><strong>Security:</strong> Multi-factor authentication, encrypted storage</li>
+                        </ul>
+                    </div>
+
+                    <div class="contact-box">
+                        <h3 style="margin-top: 0; color: #2E86AB;">🤖 Automated Setup Process</h3>
+                        <p><strong>Microsoft Account:</strong> Contact @maria for automated account setup</p>
+                        <p><strong>VPN Configuration:</strong> Automated via IT portal</p>
+                        <p><strong>Email Access:</strong> Activated automatically on start date</p>
+                        <p><strong>Development Environment:</strong> Pre-configured and ready</p>
+                    </div>
+
+                    <h2>📚 Essential Resources</h2>
                     <ul>
-                        <li><strong>Laptop:</strong> MacBook Air M2 13"</li>
-                        <li><strong>Accessories:</strong> Mouse, keyboard, USB-C hub</li>
-                        <li><strong>Software:</strong> Development tools, Office Suite</li>
-                        <li><strong>Access:</strong> VPN, company email</li>
+                        <li><a href="https://intranet.aiitech.com/handbook" style="color: #2E86AB;">📖 Employee Handbook & Policies</a></li>
+                        <li><a href="https://intranet.aiitech.com/security" style="color: #2E86AB;">🔒 Security & Compliance Guidelines</a></li>
+                        <li><a href="https://intranet.aiitech.com/it-setup" style="color: #2E86AB;">💻 IT Setup & VPN Configuration</a></li>
+                        <li><a href="https://intranet.aiitech.com/helpdesk" style="color: #2E86AB;">🆘 IT Helpdesk & Support</a></li>
+                        <li><a href="https://intranet.aiitech.com/benefits" style="color: #2E86AB;">🎁 Employee Benefits & Perks</a></li>
+                    </ul>
+
+                    <h2>📞 Automated Support System</h2>
+                    <ul>
+                        <li><strong>IT Support:</strong> helpdesk@aiitech.com | +49 30 1234 5678</li>
+                        <li><strong>HR Department:</strong> hr@aiitech.com | +49 30 1234 5679</li>
+                        <li><strong>Your Supervisor:</strong> {supervisor_email}</li>
+                        <li><strong>Equipment Handler:</strong> maria@aiitech.com</li>
                     </ul>
                 </div>
 
-                <h2 style="color:#2E86AB">📚 Resources</h2>
-                <ul>
-                    <li><a href="https://intranet.aiitech.com/handbook">Employee Handbook</a></li>
-                    <li><a href="https://intranet.aiitech.com/security">Security Guidelines</a></li>
-                    <li><a href="https://intranet.aiitech.com/it-setup">IT Setup Guide</a></li>
-                    <li><a href="https://intranet.aiitech.com/helpdesk">IT Helpdesk</a></li>
-                </ul>
-
-                <h2 style="color:#2E86AB">📞 Support</h2>
-                <ul>
-                    <li><strong>IT Support:</strong> helpdesk@aiitech.com</li>
-                    <li><strong>HR:</strong> hr@aiitech.com</li>
-                    <li><strong>Your Supervisor:</strong> {supervisor_email}</li>
-                </ul>
-            </div>
-
-            <div class="footer">
-                <p style="font-size:14px;color:#666;margin:0">We're looking forward to working with you!</p>
-                <p style="font-size:14px;color:#666;margin:5px 0 0 0">
-                    Best regards,<br>
-                    <strong>AIITECH Operations Team</strong><br>
-                    Email: {self.config.from_email}<br>
-                    Phone: +49 30 1234 5678
-                </p>
+                <div class="footer">
+                    <div class="footer-content">
+                        <h3 style="margin: 0 0 15px 0; color: white;">AIITECH Operations</h3>
+                        <p style="margin: 5px 0; font-size: 14px;">Managing Director: Dr. Anna Schmidt</p>
+                        <p style="margin: 5px 0; font-size: 14px;">Headquarters: Berlin, Germany</p>
+                        <p style="margin: 5px 0; font-size: 14px;">Email: operations@aiitech.com | Phone: +49 30 1234 5678</p>
+                        <p style="margin: 15px 0 0 0; font-size: 12px; opacity: 0.8;">
+                            This email was generated automatically by our AI-powered onboarding system.<br>
+                            We're looking forward to working with you!
+                        </p>
+                    </div>
+                </div>
             </div>
         </body>
         </html>
@@ -153,7 +187,7 @@ class EmailService:
 
         return self.send_email(
             to_email=to_email,
-            subject=f"🎉 Welcome to AIITECH, {intern_name}!",
+            subject=f"🎉 Welcome to AIITECH, {intern_name}! - Complete Onboarding Package",
             body=body,
             is_html=True,
         )
