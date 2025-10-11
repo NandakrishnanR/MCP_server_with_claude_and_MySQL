@@ -85,6 +85,11 @@ class EmailService:
         </ul>
         """
 
+        # Fix supervisor email generation
+        supervisor_email = 'anna.schmidt@aiitech.com'
+        if supervisor_name:
+            supervisor_email = supervisor_name.lower().replace(' ', '.') + '@aiitech.com'
+        
         # Professional email body with detailed pickup information
         body = f"""
         <html>
@@ -112,7 +117,7 @@ class EmailService:
                 <h2 style=\"color:#2E86AB;margin-top:30px\">👤 Your Role & Team</h2>
                 {f'<p><strong>Position:</strong> {role_info}</p>' if role_info else '<p><strong>Position:</strong> Intern</p>'}
                 {f'<p><strong>Supervisor:</strong> {supervisor_name}</p>' if supervisor_name else '<p><strong>Supervisor:</strong> Anna Schmidt (ML Team Lead)</p>'}
-                {f'<p><strong>Office Location:</strong> {office_address} {f"<a href=\"{map_link}\" style=\"color:#2E86AB\">(View Map)</a>" if map_link else ""}</p>' if office_address else ''}
+                {f'<p><strong>Office Location:</strong> {office_address} <a href="{map_link}" style="color:#2E86AB">(View Map)</a></p>' if office_address and map_link else f'<p><strong>Office Location:</strong> {office_address}</p>' if office_address else ''}
 
                 <h2 style=\"color:#2E86AB;margin-top:30px\">💻 Equipment Pickup Details</h2>
                 <div class="pickup-box">
@@ -150,7 +155,7 @@ class EmailService:
                 <ul>
                     <li><strong>IT Support:</strong> helpdesk@aiitech.com | +49 30 1234 5678</li>
                     <li><strong>HR Department:</strong> hr@aiitech.com | +49 30 1234 5679</li>
-                    <li><strong>Your Supervisor:</strong> {supervisor_name or 'Anna Schmidt'} | {supervisor_name.lower().replace(' ', '.') + '@aiitech.com' if supervisor_name else 'anna.schmidt@aiitech.com'}</li>
+                    <li><strong>Your Supervisor:</strong> {supervisor_name or 'Anna Schmidt'} | {supervisor_email}</li>
                 </ul>
             </div>
 

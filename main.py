@@ -219,10 +219,7 @@ def onboard_intern(
         map_link=map_link,
     )
 
-    # If inventory shortage, fetch low stock items for inclusion
-    shortages = low_stock(3)
-
-    # Welcome email
+    # Professional welcome email for intern (NO inventory data)
     email_res = email_service.send_intern_welcome_email(
         intern_name=intern_name,
         to_email=intern_email,
@@ -233,12 +230,18 @@ def onboard_intern(
         supervisor_name=supervisor_name,
         office_address=office_address,
         map_link=map_link,
-        low_stock_items=shortages if isinstance(shortages, list) else [],
+        low_stock_items=[],  # Intern gets NO inventory alerts
     )
 
-    # Optional follow-up inventory update message with assignees
+    # Separate inventory alerts for managers (if shortages exist)
+    manager_email_sent = None
     inv_msg = None
+    shortages = low_stock(3)
     if isinstance(shortages, list) and shortages:
+        # Send inventory alert to manager
+        manager_email_sent = email_service.send_low_stock_alert(shortages)
+        
+        # Send Slack inventory update with assignees
         assignees = [s.strip() for s in (inventory_assignees_csv or "").split(",") if s.strip()] or default_handlers
         inv_msg = slack_service.send_inventory_update_message(shortages, assignees=assignees, notify_channel=False)
 
