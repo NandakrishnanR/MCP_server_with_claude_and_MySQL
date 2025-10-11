@@ -72,26 +72,13 @@ def remove_inventory(item_id: str, location: str, quantity: int) -> dict:
 
     result = {"message": f"Removed {quantity} units of {item_id} from {location}"}
 
-    # Auto-trigger alerts when threshold is met (<= 3)
+    # Note: Individual alerts removed - use daily inventory report instead
+    # Auto-trigger consolidated alerts when threshold is met (<= 3)
     try:
         if row and row[1] is not None and int(row[1]) <= 3:
-            item_payload = [{
-                "item_id": item_id,
-                "product_name": row[0],
-                "location": location,
-                "quantity": int(row[1]),
-            }]
-            # Send both Slack and Email alerts without asking
-            slack_service.send_low_stock_alert(item_payload)
-            email_service.send_low_stock_alert(item_payload)
-            result["auto_alert"] = {
-                "status": "sent",
-                "threshold": 3,
-                "current_quantity": int(row[1])
-            }
+            result["note"] = f"Item {item_id} is now low stock ({int(row[1])} units). Use 'send_daily_inventory_report()' for consolidated alerts."
     except Exception:
-        # Do not fail the inventory update if alert sending has issues
-        result["auto_alert"] = {"status": "failed"}
+        pass
 
     return result
 
@@ -218,12 +205,12 @@ def onboard_intern(
         low_stock_items=[],  # Intern gets NO inventory alerts
     )
 
-    # Separate inventory alerts for managers (if shortages exist)
+    # Send consolidated inventory report to manager (if shortages exist)
     manager_email_sent = None
     inv_msg = None
     shortages = low_stock(3)
     if isinstance(shortages, list) and shortages:
-        # Send inventory alert to manager
+        # Send ONE consolidated inventory report to manager
         manager_email_sent = email_service.send_low_stock_alert(shortages)
         
         # Send Slack inventory update with assignees
@@ -719,6 +706,37 @@ def inventory_summary() -> Dict:
         "low_stock_count": low_stock_count,
         "top_locations": top_locations,
         "summary": f"Total: {total_items} items, {low_stock_count} low stock, top location: {top_locations[0]['location'] if top_locations else 'N/A'}"
+    }
+
+
+@mcp.tool()
+def send_daily_inventory_report(threshold: int = 3) -> Dict:
+    """
+    Send ONE consolidated inventory report to manager - professional and comprehensive.
+    This replaces individual alerts with a single daily report.
+    """
+    # Get all low stock items
+    low_stock_items = low_stock(threshold)
+    
+    if isinstance(low_stock_items, dict) and "error" in low_stock_items:
+        return low_stock_items
+    
+    if not low_stock_items:
+        return {"status": "no_alert", "message": "No low stock items found"}
+    
+    # Send consolidated email report
+    email_result = email_service.send_low_stock_alert(low_stock_items)
+    
+    # Send Slack notification
+    slack_result = slack_service.send_low_stock_alert(low_stock_items)
+    
+    return {
+        "status": "consolidated_report_sent",
+        "email_result": email_result,
+        "slack_result": slack_result,
+        "items_included": len(low_stock_items),
+        "threshold": threshold,
+        "message": f"Single consolidated report sent with {len(low_stock_items)} low stock items"
     }
 
 
