@@ -2,6 +2,7 @@ from mcp.server.fastmcp import FastMCP
 import mysql.connector
 from typing import List, Dict, Optional
 import re
+import os
 from dotenv import load_dotenv
 from config import get_db_config_dict
 from slack_service import SlackService
@@ -412,7 +413,7 @@ def _parse_onboarding_prompt(prompt: str) -> Dict:
 def onboard_intern_from_prompt(prompt: str) -> Dict:
     """
     Parse a natural-language prompt and trigger onboarding (Slack welcome + email + inventory message).
-    Example: "Welcome @max (max@example.com) starting tomorrow in Cologne. Assign @sarah @tom to handle inventory."
+    Example: "Welcome @max (max@example.com) starting tomorrow in Cologne. Assign @Maria @tom to handle inventory."
     """
     parsed = _parse_onboarding_prompt(prompt)
     name = parsed.get("name") or "New Intern"
