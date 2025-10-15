@@ -34,6 +34,10 @@ employee_dir = load_directory(os.getenv("EMPLOYEE_DIRECTORY_JSON"))
 
 @mcp.tool()
 def add_inventory(item_id: str, product_name: str, location: str, quantity: int) -> dict:
+    """Add or increase stock for an item at a location.
+
+    Creates the row if missing; otherwise increments quantity.
+    """
     # Input validation
     if quantity <= 0:
         return {"error": "Quantity must be a positive integer"}
@@ -52,6 +56,7 @@ def add_inventory(item_id: str, product_name: str, location: str, quantity: int)
 
 @mcp.tool()
 def remove_inventory(item_id: str, location: str, quantity: int) -> dict:
+    """Reduce stock for an item at a location and report low-stock warning when <= threshold."""
     # Input validation
     if quantity <= 0:
         return {"error": "Quantity must be a positive integer"}
@@ -88,6 +93,7 @@ def remove_inventory(item_id: str, location: str, quantity: int) -> dict:
 
 @mcp.tool()
 def check_stock(item_id: str, location: str) -> dict:
+    """Return current quantity and product name for a specific item at a location."""
     conn = mysql.connector.connect(**db_config)
     cursor = conn.cursor()
     cursor.execute(
@@ -114,6 +120,7 @@ def check_stock(item_id: str, location: str) -> dict:
 
 @mcp.tool()
 def list_inventory() -> list:
+    """List all inventory rows (optionally filtered to German cities via env GERMAN_ONLY)."""
     conn = mysql.connector.connect(**db_config)
     cursor = conn.cursor(dictionary=True)
     # Enforce German-only view if flag is set
@@ -148,6 +155,7 @@ def onboard_intern(
     office_address: str | None = None,
     map_link: str | None = None,
 ) -> Dict:
+    """End-to-end onboarding: Slack welcome, professional email to intern, and manager inventory alert."""
     """
     End-to-end onboarding:
     - Post a Slack welcome with pickup details
@@ -231,70 +239,17 @@ def onboard_intern(
     }
 
 
-@mcp.tool()
-def migrate_locations_to_german() -> Dict:
-    """
-    Update existing rows with Indian city names to major German cities.
-    Safe to run multiple times.
-    Mapping:
-      Bengaluru->Berlin, Mumbai->Munich, Delhi->Hamburg, Pune->Frankfurt,
-      Kolkata->Cologne, Chennai->Stuttgart, Hyderabad->Dusseldorf
-    """
-    mapping = {
-        "Bengaluru": "Berlin",
-        "Bangalore": "Berlin",
-        "Mumbai": "Munich",
-        "Bombay": "Munich",
-        "Delhi": "Hamburg",
-        "New Delhi": "Hamburg",
-        "Pune": "Frankfurt",
-        "Kolkata": "Cologne",
-        "Calcutta": "Cologne",
-        "Chennai": "Stuttgart",
-        "Hyderabad": "Dusseldorf",
-    }
-    conn = mysql.connector.connect(**db_config)
-    cursor = conn.cursor()
-    total_updated = 0
-    per_city: Dict[str, int] = {}
-    for src, dst in mapping.items():
-        cursor.execute("UPDATE inventory SET location=%s WHERE location=%s", (dst, src))
-        count = cursor.rowcount
-        if count:
-            per_city[f"{src}->" + dst] = int(count)
-            total_updated += int(count)
-    conn.commit()
-    conn.close()
-    return {"updated": total_updated, "details": per_city}
+# Deprecated tool removed: migrate_locations_to_german (no longer needed)
 
 
-@mcp.tool()
-def purge_non_german_locations() -> Dict:
-    """Delete all inventory rows whose location is not a major German city.
-
-    This prevents legacy Indian locations from triggering alerts.
-    """
-    german = {
-        "Berlin", "Munich", "Hamburg", "Frankfurt", "Cologne",
-        "Stuttgart", "Dusseldorf", "Dortmund", "Essen", "Leipzig",
-        "Bremen", "Dresden", "Hanover", "Nuremberg", "Duisburg",
-        "Bochum", "Wuppertal", "Bielefeld", "Bonn", "Munster"
-    }
-    conn = mysql.connector.connect(**db_config)
-    cursor = conn.cursor()
-    # Delete anything not in the set
-    format_strings = ",".join(["%s"] * len(german))
-    cursor.execute(f"DELETE FROM inventory WHERE location NOT IN ({format_strings})", tuple(german))
-    deleted = cursor.rowcount
-    conn.commit()
-    conn.close()
-    return {"deleted": int(deleted)}
+# Deprecated tool removed: purge_non_german_locations (no longer needed)
 
 
 def _parse_onboarding_prompt(prompt: str) -> Dict:
-    """
-    Heuristic parser for natural language onboarding prompts.
-    Extracts: email, name, city, date (YYYY-MM-DD), intern mention, assignees list.
+    """Parse a natural language onboarding prompt into structured fields.
+
+    Extracts: email, name, city, date (YYYY-MM-DD), intern Slack mention,
+    optional assignees, role info, supervisor, office address, and map link.
     """
     result: Dict[str, Optional[str] | List[str]] = {
         "email": None,
@@ -474,6 +429,7 @@ def onboard_intern_direct(
 
 @mcp.tool()
 def debug_onboarding_flow(intern_name: str, city: str) -> Dict:
+    """Debug helper: returns email config and a sample manager alert send result."""
     """Debug the onboarding flow to check email separation."""
     # Get low stock items
     shortages = low_stock(3)
@@ -714,9 +670,7 @@ def inventory_summary() -> Dict:
 
 @mcp.tool()
 def send_slack_alert(threshold: int = 3) -> Dict:
-    """
-    Send low stock alert to Slack - automation foundation
-    """
+    """Send a Slack inventory alert for items at or below the given threshold."""
     # Get low stock items
     low_stock_items = low_stock(threshold)
     
@@ -735,9 +689,7 @@ def send_slack_alert(threshold: int = 3) -> Dict:
 
 @mcp.tool()
 def send_daily_summary_to_slack() -> Dict:
-    """
-    Send daily inventory summary to Slack - automation foundation
-    """
+    """Send a daily inventory summary to Slack with critical/warning breakdowns."""
     # Get summary data
     summary_data = inventory_summary()
     
@@ -766,9 +718,7 @@ def test_slack_connection() -> Dict:
 
 @mcp.tool()
 def send_email_alert(threshold: int = 3) -> Dict:
-    """
-    Send low stock alert via email - automation foundation
-    """
+    """Email a professional low-stock report to the configured manager address."""
     # Get low stock items
     low_stock_items = low_stock(threshold)
     
@@ -787,9 +737,7 @@ def send_email_alert(threshold: int = 3) -> Dict:
 
 @mcp.tool()
 def send_daily_summary_email() -> Dict:
-    """
-    Send daily inventory summary via email - automation foundation
-    """
+    """Email a daily inventory summary to the manager (counts and actionable items)."""
     # Get summary data
     summary_data = inventory_summary()
     
@@ -804,10 +752,7 @@ def send_daily_summary_email() -> Dict:
 
 @mcp.tool()
 def diagnose_email(to_email: str | None = None) -> Dict:
-    """Send a minimal test email and report SMTP env configuration.
-
-    Use this if recipients aren't receiving emails. It will not log secrets.
-    """
+    """Run SMTP connectivity checks and send a tiny test email to verify setup."""
     subject = "SMTP Diagnostic from Inventory MCP"
     body = "<html><body><p>This is a diagnostic test.</p></body></html>"
     target = to_email or email_service.config.to_email
@@ -829,9 +774,7 @@ def diagnose_email(to_email: str | None = None) -> Dict:
 
 @mcp.tool()
 def test_email_connection() -> Dict:
-    """
-    Test email SMTP connection - verify integration works
-    """
+    """Send a test HTML email to confirm email credentials and server connectivity."""
     test_subject = "🧪 Test Email from Inventory MCP Server"
     test_body = """
     <html>
@@ -858,9 +801,7 @@ def test_email_connection() -> Dict:
 
 @mcp.tool()
 def send_combined_alert(threshold: int = 3) -> Dict:
-    """
-    Send low stock alert to both Slack and Email - full automation
-    """
+    """Send both Slack and email inventory alerts using a single consolidated dataset."""
     # Get low stock items
     low_stock_items = low_stock(threshold)
     
@@ -882,9 +823,7 @@ def send_combined_alert(threshold: int = 3) -> Dict:
 
 @mcp.tool()
 def auto_reorder_low_stock(threshold: int = 3) -> Dict:
-    """
-    Automatically create purchase orders for low stock items - REAL BUSINESS VALUE
-    """
+    """Create purchase orders automatically for critically low items at or below threshold."""
     # Get low stock items
     low_stock_items = low_stock(threshold)
     
