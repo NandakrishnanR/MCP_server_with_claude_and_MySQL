@@ -73,9 +73,17 @@ Each tool follows this pattern:
 
 ### 1. Setup MySQL
 ```bash
-# Create database and table
-mysql -u root -p < database.sql
+# Create database and run clean setup (170 products in German cities)
+mysql -u root -p aaitech_inventory < database.sql
 ```
+
+This creates a completely clean database with:
+- **170 products** across 20 German cities
+- **50 Laptops** (LAP-001 to LAP-050)
+- **40 Mobile Phones** (MOB-001 to MOB-040) 
+- **30 Tablets** (TAB-001 to TAB-030)
+- **50 Accessories** (ACC-001 to ACC-050)
+- **No Indian cities** - Only German locations
 
 ### 2. Install Dependencies
 ```bash

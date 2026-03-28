@@ -1,11 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
-name = "inventory-mcp-server"
+name = "inventory-mcp"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.10"
-dependencies = [
-    "httpx",
-    "mcp[cli]",
-    "mysql-connector-python",
+description = "Inventory Management MCP Server with Slack and Email Integration"
+authors = [
+    {name = "AIITECH", email = "nandakrishnan.rajeev@gmail.com"},
 ]
+dependencies = [
+    "mcp>=1.0.0",
+    "mysql-connector-python>=8.0.0",
+    "requests>=2.25.0",
+    "python-dotenv>=0.19.0",
+]
+requires-python = ">=3.10"
+
+[project.scripts]
+inventory-mcp = "inventory_mcp.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["inventory_mcp"]

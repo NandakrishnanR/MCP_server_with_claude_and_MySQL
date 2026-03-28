@@ -2,7 +2,6 @@ from mcp.server.fastmcp import FastMCP
 import mysql.connector
 from typing import List, Dict, Optional
 import re
-import os
 from dotenv import load_dotenv
 from config import get_db_config_dict
 from slack_service import SlackService
@@ -20,7 +19,22 @@ from employee_directory import (
 # Load environment variables
 load_dotenv()
 
-# Environment variables are loaded from .env file or system environment
+# Set default environment variables if not set (for Claude Desktop compatibility)
+import os
+if not os.getenv('EMAIL_USERNAME'):
+    os.environ['EMAIL_USERNAME'] = 'your_email@gmail.com'
+if not os.getenv('EMAIL_PASSWORD'):
+    os.environ['EMAIL_PASSWORD'] = 'your_app_password'
+if not os.getenv('FROM_EMAIL'):
+    os.environ['FROM_EMAIL'] = 'your_email@gmail.com'
+if not os.getenv('TO_EMAIL'):
+    os.environ['TO_EMAIL'] = 'manager@company.com'
+if not os.getenv('SLACK_WEBHOOK_URL'):
+    os.environ['SLACK_WEBHOOK_URL'] = 'YOUR_SLACK_WEBHOOK_URL_HERE'
+if not os.getenv('SLACK_CHANNEL'):
+    os.environ['SLACK_CHANNEL'] = '#your-channel'
+if not os.getenv('SLACK_USERNAME'):
+    os.environ['SLACK_USERNAME'] = 'Inventory Automation Bot'
 
 mcp = FastMCP(name="inventory_mcp")
 
@@ -34,10 +48,6 @@ employee_dir = load_directory(os.getenv("EMPLOYEE_DIRECTORY_JSON"))
 
 @mcp.tool()
 def add_inventory(item_id: str, product_name: str, location: str, quantity: int) -> dict:
-    """Add or increase stock for an item at a location.
-
-    Creates the row if missing; otherwise increments quantity.
-    """
     # Input validation
     if quantity <= 0:
         return {"error": "Quantity must be a positive integer"}
@@ -56,7 +66,6 @@ def add_inventory(item_id: str, product_name: str, location: str, quantity: int)
 
 @mcp.tool()
 def remove_inventory(item_id: str, location: str, quantity: int) -> dict:
-    """Reduce stock for an item at a location and report low-stock warning when <= threshold."""
     # Input validation
     if quantity <= 0:
         return {"error": "Quantity must be a positive integer"}
@@ -78,22 +87,32 @@ def remove_inventory(item_id: str, location: str, quantity: int) -> dict:
 
     result = {"message": f"Removed {quantity} units of {item_id} from {location}"}
 
-    # Note: Auto-alerts removed to prevent duplicate emails
-    # Use dedicated alert functions for consolidated reporting
-    if row and row[1] is not None and int(row[1]) <= 3:
-        result["low_stock_warning"] = {
-            "status": "detected",
-            "threshold": 3,
-            "current_quantity": int(row[1]),
-            "note": "Use send_combined_alert() for consolidated reporting"
-        }
+    # Auto-trigger alerts when threshold is met (<= 3)
+    try:
+        if row and row[1] is not None and int(row[1]) <= 3:
+            item_payload = [{
+                "item_id": item_id,
+                "product_name": row[0],
+                "location": location,
+                "quantity": int(row[1]),
+            }]
+            # Send both Slack and Email alerts without asking
+            slack_service.send_low_stock_alert(item_payload)
+            email_service.send_low_stock_alert(item_payload)
+            result["auto_alert"] = {
+                "status": "sent",
+                "threshold": 3,
+                "current_quantity": int(row[1])
+            }
+    except Exception:
+        # Do not fail the inventory update if alert sending has issues
+        result["auto_alert"] = {"status": "failed"}
 
     return result
 
 
 @mcp.tool()
 def check_stock(item_id: str, location: str) -> dict:
-    """Return current quantity and product name for a specific item at a location."""
     conn = mysql.connector.connect(**db_config)
     cursor = conn.cursor()
     cursor.execute(
@@ -120,7 +139,6 @@ def check_stock(item_id: str, location: str) -> dict:
 
 @mcp.tool()
 def list_inventory() -> list:
-    """List all inventory rows (optionally filtered to German cities via env GERMAN_ONLY)."""
     conn = mysql.connector.connect(**db_config)
     cursor = conn.cursor(dictionary=True)
     # Enforce German-only view if flag is set
@@ -155,7 +173,6 @@ def onboard_intern(
     office_address: str | None = None,
     map_link: str | None = None,
 ) -> Dict:
-    """End-to-end onboarding: Slack welcome, professional email to intern, and manager inventory alert."""
     """
     End-to-end onboarding:
     - Post a Slack welcome with pickup details
@@ -202,7 +219,10 @@ def onboard_intern(
         map_link=map_link,
     )
 
-    # Professional welcome email for intern (NO inventory data)
+    # If inventory shortage, fetch low stock items for inclusion
+    shortages = low_stock(3)
+
+    # Welcome email
     email_res = email_service.send_intern_welcome_email(
         intern_name=intern_name,
         to_email=intern_email,
@@ -213,18 +233,12 @@ def onboard_intern(
         supervisor_name=supervisor_name,
         office_address=office_address,
         map_link=map_link,
-        low_stock_items=[],  # Intern gets NO inventory alerts
+        low_stock_items=shortages if isinstance(shortages, list) else [],
     )
 
-    # Separate inventory alerts for managers (if shortages exist)
-    manager_email_sent = None
+    # Optional follow-up inventory update message with assignees
     inv_msg = None
-    shortages = low_stock(3)
     if isinstance(shortages, list) and shortages:
-        # Send inventory alert to manager
-        manager_email_sent = email_service.send_low_stock_alert(shortages)
-        
-        # Send Slack inventory update with assignees
         assignees = [s.strip() for s in (inventory_assignees_csv or "").split(",") if s.strip()] or default_handlers
         inv_msg = slack_service.send_inventory_update_message(shortages, assignees=assignees, notify_channel=False)
 
@@ -239,17 +253,70 @@ def onboard_intern(
     }
 
 
-# Deprecated tool removed: migrate_locations_to_german (no longer needed)
+@mcp.tool()
+def migrate_locations_to_german() -> Dict:
+    """
+    Update existing rows with Indian city names to major German cities.
+    Safe to run multiple times.
+    Mapping:
+      Bengaluru->Berlin, Mumbai->Munich, Delhi->Hamburg, Pune->Frankfurt,
+      Kolkata->Cologne, Chennai->Stuttgart, Hyderabad->Dusseldorf
+    """
+    mapping = {
+        "Bengaluru": "Berlin",
+        "Bangalore": "Berlin",
+        "Mumbai": "Munich",
+        "Bombay": "Munich",
+        "Delhi": "Hamburg",
+        "New Delhi": "Hamburg",
+        "Pune": "Frankfurt",
+        "Kolkata": "Cologne",
+        "Calcutta": "Cologne",
+        "Chennai": "Stuttgart",
+        "Hyderabad": "Dusseldorf",
+    }
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor()
+    total_updated = 0
+    per_city: Dict[str, int] = {}
+    for src, dst in mapping.items():
+        cursor.execute("UPDATE inventory SET location=%s WHERE location=%s", (dst, src))
+        count = cursor.rowcount
+        if count:
+            per_city[f"{src}->" + dst] = int(count)
+            total_updated += int(count)
+    conn.commit()
+    conn.close()
+    return {"updated": total_updated, "details": per_city}
 
 
-# Deprecated tool removed: purge_non_german_locations (no longer needed)
+@mcp.tool()
+def purge_non_german_locations() -> Dict:
+    """Delete all inventory rows whose location is not a major German city.
+
+    This prevents legacy Indian locations from triggering alerts.
+    """
+    german = {
+        "Berlin", "Munich", "Hamburg", "Frankfurt", "Cologne",
+        "Stuttgart", "Dusseldorf", "Dortmund", "Essen", "Leipzig",
+        "Bremen", "Dresden", "Hanover", "Nuremberg", "Duisburg",
+        "Bochum", "Wuppertal", "Bielefeld", "Bonn", "Munster"
+    }
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor()
+    # Delete anything not in the set
+    format_strings = ",".join(["%s"] * len(german))
+    cursor.execute(f"DELETE FROM inventory WHERE location NOT IN ({format_strings})", tuple(german))
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return {"deleted": int(deleted)}
 
 
 def _parse_onboarding_prompt(prompt: str) -> Dict:
-    """Parse a natural language onboarding prompt into structured fields.
-
-    Extracts: email, name, city, date (YYYY-MM-DD), intern Slack mention,
-    optional assignees, role info, supervisor, office address, and map link.
+    """
+    Heuristic parser for natural language onboarding prompts.
+    Extracts: email, name, city, date (YYYY-MM-DD), intern mention, assignees list.
     """
     result: Dict[str, Optional[str] | List[str]] = {
         "email": None,
@@ -368,7 +435,7 @@ def _parse_onboarding_prompt(prompt: str) -> Dict:
 def onboard_intern_from_prompt(prompt: str) -> Dict:
     """
     Parse a natural-language prompt and trigger onboarding (Slack welcome + email + inventory message).
-    Example: "Welcome @max (max@example.com) starting tomorrow in Cologne. Assign @Maria @tom to handle inventory."
+    Example: "Welcome @max (max@example.com) starting tomorrow in Cologne. Assign @sarah @tom to handle inventory."
     """
     parsed = _parse_onboarding_prompt(prompt)
     name = parsed.get("name") or "New Intern"
@@ -425,30 +492,6 @@ def onboard_intern_direct(
         map_link=map_link,
         inventory_assignees_csv=inventory_assignees_csv,  # if None, default equipment handlers are used
     )
-
-
-@mcp.tool()
-def debug_onboarding_flow(intern_name: str, city: str) -> Dict:
-    """Debug helper: returns email config and a sample manager alert send result."""
-    """Debug the onboarding flow to check email separation."""
-    # Get low stock items
-    shortages = low_stock(3)
-    
-    # Test manager email
-    manager_email_result = None
-    if isinstance(shortages, list) and shortages:
-        manager_email_result = email_service.send_low_stock_alert(shortages)
-    
-    return {
-        "low_stock_items_found": len(shortages) if isinstance(shortages, list) else 0,
-        "manager_email_config": {
-            "to_email": email_service.config.to_email,
-            "from_email": email_service.config.from_email,
-            "smtp_server": email_service.config.smtp_server
-        },
-        "manager_email_result": manager_email_result,
-        "shortages_sample": shortages[:3] if isinstance(shortages, list) and shortages else []
-    }
 
 
 @mcp.tool()
@@ -670,7 +713,9 @@ def inventory_summary() -> Dict:
 
 @mcp.tool()
 def send_slack_alert(threshold: int = 3) -> Dict:
-    """Send a Slack inventory alert for items at or below the given threshold."""
+    """
+    Send low stock alert to Slack - automation foundation
+    """
     # Get low stock items
     low_stock_items = low_stock(threshold)
     
@@ -689,7 +734,9 @@ def send_slack_alert(threshold: int = 3) -> Dict:
 
 @mcp.tool()
 def send_daily_summary_to_slack() -> Dict:
-    """Send a daily inventory summary to Slack with critical/warning breakdowns."""
+    """
+    Send daily inventory summary to Slack - automation foundation
+    """
     # Get summary data
     summary_data = inventory_summary()
     
@@ -718,7 +765,9 @@ def test_slack_connection() -> Dict:
 
 @mcp.tool()
 def send_email_alert(threshold: int = 3) -> Dict:
-    """Email a professional low-stock report to the configured manager address."""
+    """
+    Send low stock alert via email - automation foundation
+    """
     # Get low stock items
     low_stock_items = low_stock(threshold)
     
@@ -737,7 +786,9 @@ def send_email_alert(threshold: int = 3) -> Dict:
 
 @mcp.tool()
 def send_daily_summary_email() -> Dict:
-    """Email a daily inventory summary to the manager (counts and actionable items)."""
+    """
+    Send daily inventory summary via email - automation foundation
+    """
     # Get summary data
     summary_data = inventory_summary()
     
@@ -752,7 +803,10 @@ def send_daily_summary_email() -> Dict:
 
 @mcp.tool()
 def diagnose_email(to_email: str | None = None) -> Dict:
-    """Run SMTP connectivity checks and send a tiny test email to verify setup."""
+    """Send a minimal test email and report SMTP env configuration.
+
+    Use this if recipients aren't receiving emails. It will not log secrets.
+    """
     subject = "SMTP Diagnostic from Inventory MCP"
     body = "<html><body><p>This is a diagnostic test.</p></body></html>"
     target = to_email or email_service.config.to_email
@@ -774,7 +828,9 @@ def diagnose_email(to_email: str | None = None) -> Dict:
 
 @mcp.tool()
 def test_email_connection() -> Dict:
-    """Send a test HTML email to confirm email credentials and server connectivity."""
+    """
+    Test email SMTP connection - verify integration works
+    """
     test_subject = "🧪 Test Email from Inventory MCP Server"
     test_body = """
     <html>
@@ -801,7 +857,9 @@ def test_email_connection() -> Dict:
 
 @mcp.tool()
 def send_combined_alert(threshold: int = 3) -> Dict:
-    """Send both Slack and email inventory alerts using a single consolidated dataset."""
+    """
+    Send low stock alert to both Slack and Email - full automation
+    """
     # Get low stock items
     low_stock_items = low_stock(threshold)
     
@@ -823,7 +881,9 @@ def send_combined_alert(threshold: int = 3) -> Dict:
 
 @mcp.tool()
 def auto_reorder_low_stock(threshold: int = 3) -> Dict:
-    """Create purchase orders automatically for critically low items at or below threshold."""
+    """
+    Automatically create purchase orders for low stock items - REAL BUSINESS VALUE
+    """
     # Get low stock items
     low_stock_items = low_stock(threshold)
     
